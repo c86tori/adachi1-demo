@@ -20868,6 +20868,42 @@ function isPhone(){
 if(!isPhone()) return;
 document.documentElement.classList.add('is-phone');
 
+/* ============================================================
+   ★スマホのマナーモード対応（PC版には一切影響しません）
+   iOSの仕様：
+     ・HTMLの <audio> 要素      → マナーモードで消音される（正しい挙動）
+     ・Web Audio API            → マナーモードを無視して鳴ってしまう
+   BGMは <audio> なのでOSに任せ、Web Audio側だけを黙らせる。
+   これでマナーモードON＝完全無音、OFF＝BGMは鳴る、が成立する。
+   ============================================================ */
+(function silenceWebAudio(){
+  /* 音源用の変数はIIFE内に隠れていて外から触れないため、
+     AudioContextの「生成」そのものに介入する。
+     生成された瞬間に停止し、再開もさせない。
+     ゲーム側のコードは一切変更しないので、PC版には影響しない。 */
+  var made = [];
+  ['AudioContext','webkitAudioContext'].forEach(function(key){
+    var Orig = window[key];
+    if(typeof Orig !== 'function' || Orig.__phoneSilenced) return;
+    function Silenced(opts){
+      var ctx = opts === undefined ? new Orig() : new Orig(opts);
+      made.push(ctx);
+      try{ ctx.suspend(); }catch(e){}
+      try{ ctx.resume = function(){ return Promise.resolve(); }; }catch(e){}   /* 再開を封じる */
+      return ctx;
+    }
+    Silenced.prototype = Orig.prototype;
+    Silenced.__phoneSilenced = true;
+    try{ window[key] = Silenced; }catch(e){}
+  });
+  /* 万一どこかで再開されても、すぐ止め直す保険 */
+  setInterval(function(){
+    for(var i=0;i<made.length;i++){
+      try{ if(made[i].state === 'running') made[i].suspend(); }catch(e){}
+    }
+  }, 500);
+})();
+
 /* ① 出撃ボタンのクリックを、既存処理に届く前に止める（captureで先回り） */
 document.addEventListener('click', function(e){
   var t = e.target;
