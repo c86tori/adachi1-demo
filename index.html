@@ -20792,6 +20792,135 @@ patch();
 })();
 </script>
 
+<style id="demo-phone-style">
+/* ============================================================
+   ★スマホ非対応の案内（体験版のみ）
+   タイトルとBGMまでは通常どおり。「出撃する」だけを止める。
+   ============================================================ */
+#ts-start.pc-only-locked{
+  filter:grayscale(.85) brightness(.55);
+  cursor:not-allowed;
+  position:relative;
+}
+#ts-start.pc-only-locked::after{
+  content:"PC専用";
+  position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  font-family:var(--fd);font-size:9px;letter-spacing:.16em;font-weight:700;
+  color:#ffcf7a;border:1px solid rgba(255,190,90,.55);
+  padding:2px 7px 3px;border-radius:2px;background:rgba(30,18,4,.7);
+}
+#phone-notice{
+  display:none;
+  margin:14px auto 0;width:min(430px,88vw);
+  border:1px solid rgba(255,190,90,.42);
+  background:linear-gradient(180deg,rgba(26,16,4,.92),rgba(12,8,3,.94));
+  box-shadow:0 0 30px rgba(0,0,0,.55);
+  padding:15px 17px 16px;text-align:left;
+  clip-path:polygon(0 9px,9px 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);
+}
+#phone-notice.on{display:block;animation:pnIn .5s ease both}
+@keyframes pnIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#phone-notice .pn-h{
+  font-family:var(--fd);font-size:10px;letter-spacing:.2em;
+  color:#ffcf7a;margin-bottom:9px;
+}
+#phone-notice .pn-h .w{
+  display:inline-block;width:7px;height:7px;background:#ffb84d;
+  border-radius:50%;margin-right:8px;vertical-align:1px;
+  animation:pnBlink 1.4s steps(2,end) infinite;
+}
+@keyframes pnBlink{0%,49%{opacity:1}50%,100%{opacity:.2}}
+#phone-notice .pn-t{
+  font-family:var(--fp);font-size:14.5px;font-weight:700;color:#f4ead8;
+  letter-spacing:.05em;margin-bottom:7px;
+}
+#phone-notice .pn-b{font-size:12px;line-height:1.85;color:#b3a894}
+#phone-notice .pn-url{
+  margin-top:11px;display:flex;gap:8px;align-items:center;
+}
+#phone-notice .pn-url input{
+  flex:1;min-width:0;font-family:var(--fd);font-size:10.5px;
+  color:#d8cdb6;background:rgba(0,0,0,.5);
+  border:1px solid rgba(255,190,90,.28);padding:7px 8px;border-radius:2px;
+}
+#phone-notice .pn-copy{
+  font-family:var(--fp);font-size:11.5px;font-weight:600;white-space:nowrap;
+  color:#1a1206;background:linear-gradient(180deg,#ffd68f,#e3a648);
+  border:0;padding:8px 13px;cursor:pointer;border-radius:2px;
+}
+#phone-notice .pn-copy:active{filter:brightness(.9)}
+</style>
+<script id="demo-phone-gate">
+(function(){
+'use strict';
+/* スマホ判定：UAと「粗いポインタ＋小さい画面」の両面で見る */
+function isPhone(){
+  var ua = navigator.userAgent || '';
+  if(/iPhone|iPod|Windows Phone/i.test(ua)) return true;
+  if(/Android/i.test(ua) && /Mobile/i.test(ua)) return true;
+  try{
+    var coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    var shortSide = Math.min(screen.width||0, screen.height||0);   /* 回転しても変わらない */
+    if(coarse && shortSide && shortSide < 820) return true;
+  }catch(e){}
+  return false;
+}
+if(!isPhone()) return;
+document.documentElement.classList.add('is-phone');
+
+/* ① 出撃ボタンのクリックを、既存処理に届く前に止める（captureで先回り） */
+document.addEventListener('click', function(e){
+  var t = e.target;
+  var btn = (t && t.closest) ? t.closest('#ts-start') : null;
+  if(!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  var n = document.getElementById('phone-notice');
+  if(n){                                   /* タップされたら案内を強調する */
+    n.classList.add('on');
+    n.style.animation='none'; void n.offsetWidth; n.style.animation='';
+    try{ n.scrollIntoView({block:'nearest',behavior:'smooth'}); }catch(_){}
+  }
+}, true);
+
+/* ② タイトルに案内を出す */
+function build(){
+  var menu = document.querySelector('.ts-menu');
+  if(!menu){ setTimeout(build, 200); return; }
+  if(document.getElementById('phone-notice')) return;
+
+  var start = document.getElementById('ts-start');
+  if(start){ start.classList.add('pc-only-locked'); start.setAttribute('aria-disabled','true'); }
+
+  var box = document.createElement('div');
+  box.id = 'phone-notice';
+  box.innerHTML =
+    '<div class="pn-h"><span class="w"></span>DEVICE NOT SUPPORTED</div>' +
+    '<div class="pn-t">この体験版はPC専用です</div>' +
+    '<div class="pn-b">スマートフォンには対応していません。<br>' +
+    'パソコンのブラウザで開くと、そのまま遊べます。</div>' +
+    '<div class="pn-url"><input type="text" readonly value="' + location.href.split('#')[0] + '">' +
+    '<button type="button" class="pn-copy">URLをコピー</button></div>';
+  menu.appendChild(box);
+  requestAnimationFrame(function(){ box.classList.add('on'); });
+
+  box.querySelector('.pn-copy').addEventListener('click', function(){
+    var self=this, inp=box.querySelector('input');
+    function done(){ self.textContent='コピーしました'; setTimeout(function(){ self.textContent='URLをコピー'; },1800); }
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(inp.value).then(done, fallback);
+      } else fallback();
+    }catch(e){ fallback(); }
+    function fallback(){
+      try{ inp.focus(); inp.setSelectionRange(0, inp.value.length); document.execCommand('copy'); done(); }
+      catch(_){ self.textContent='長押しで選択してください'; }
+    }
+  });
+}
+build();
+})();
+</script>
 <script id="demo-analytics">
 (function(){
 'use strict';
