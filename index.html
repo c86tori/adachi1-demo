@@ -20869,39 +20869,34 @@ if(!isPhone()) return;
 document.documentElement.classList.add('is-phone');
 
 /* ============================================================
-   ★スマホのマナーモード対応（PC版には一切影響しません）
-   iOSの仕様：
-     ・HTMLの <audio> 要素      → マナーモードで消音される（正しい挙動）
-     ・Web Audio API            → マナーモードを無視して鳴ってしまう
-   BGMは <audio> なのでOSに任せ、Web Audio側だけを黙らせる。
-   これでマナーモードON＝完全無音、OFF＝BGMは鳴る、が成立する。
+   ★スマホではタイトルBGMを再生しない（PC版には一切影響しません）
+   BGMは new Audio('sound/genpatsu_top_m.mp3') の1箇所だけで作られるが、
+   その変数はIIFE内に隠れていて外から触れない。
+   そこで Audio コンストラクタ自体に介入し、
+   スマホのときだけ「鳴らない Audio」を返すようにする。
+   ゲーム側のコードは1行も変更しない。効果音（Web Audio）はそのまま鳴る。
    ============================================================ */
-(function silenceWebAudio(){
-  /* 音源用の変数はIIFE内に隠れていて外から触れないため、
-     AudioContextの「生成」そのものに介入する。
-     生成された瞬間に停止し、再開もさせない。
-     ゲーム側のコードは一切変更しないので、PC版には影響しない。 */
-  var made = [];
-  ['AudioContext','webkitAudioContext'].forEach(function(key){
-    var Orig = window[key];
-    if(typeof Orig !== 'function' || Orig.__phoneSilenced) return;
-    function Silenced(opts){
-      var ctx = opts === undefined ? new Orig() : new Orig(opts);
-      made.push(ctx);
-      try{ ctx.suspend(); }catch(e){}
-      try{ ctx.resume = function(){ return Promise.resolve(); }; }catch(e){}   /* 再開を封じる */
-      return ctx;
-    }
-    Silenced.prototype = Orig.prototype;
-    Silenced.__phoneSilenced = true;
-    try{ window[key] = Silenced; }catch(e){}
-  });
-  /* 万一どこかで再開されても、すぐ止め直す保険 */
-  setInterval(function(){
-    for(var i=0;i<made.length;i++){
-      try{ if(made[i].state === 'running') made[i].suspend(); }catch(e){}
-    }
-  }, 500);
+(function blockTitleBGM(){
+  var OrigAudio = window.Audio;
+  if(typeof OrigAudio !== 'function' || OrigAudio.__phoneBlocked) return;
+  function BlockedAudio(src){
+    var a = (src === undefined) ? new OrigAudio() : new OrigAudio(src);
+    try{
+      a.muted = true;
+      a.volume = 0;
+      a.autoplay = false;
+      a.preload = 'none';                       /* 通信も発生させない */
+      a.play = function(){ return Promise.resolve(); };   /* 再生要求を黙って受け流す */
+      /* 音量を上げ直されても無音を維持する */
+      a.addEventListener('volumechange', function(){
+        if(a.volume !== 0 || !a.muted){ a.volume = 0; a.muted = true; }
+      });
+    }catch(e){}
+    return a;
+  }
+  BlockedAudio.prototype = OrigAudio.prototype;
+  BlockedAudio.__phoneBlocked = true;
+  try{ window.Audio = BlockedAudio; }catch(e){}
 })();
 
 /* ① 出撃ボタンのクリックを、既存処理に届く前に止める（captureで先回り） */
